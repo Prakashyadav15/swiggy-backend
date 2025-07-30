@@ -3,6 +3,7 @@ const db=new sqlite3.Database("login.db")
 
 db.run(`
     CREATE TABLE IF NOT EXISTS user_login (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     username VARCHAR(200),
     password VARCHAR(200),
     email VARCHAR(200),
@@ -21,4 +22,8 @@ db.run(`
 )
 
 
-db.run
+db.run(`
+    CREATE TABLE IF NOT EXISTS user_history
+    (
+    id INT
+    USER)`)
