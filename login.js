@@ -11,7 +11,7 @@ const JWT_SECRET = "mysecretkey";
 
 const app=express();
 
-const dbpath=path.join(__dirname,"log.db")
+const dbpath=path.join(__dirname,"login.db")
 let db=null;
 const initialise=async()=>{
     try{
@@ -146,3 +146,14 @@ DELETE FROM user_history WHERE user_id="${user_id}"`
 await db.run(Dquery)
 res.send("deleted successfully")
 })
+
+//====owner table==//
+app.post("owner",async(req,res)=>{
+  const {id,email,password}=req.body
+  const postquery=`
+  INSERT INTO owner (id,email,password),
+  VALUES('${id}','${email}','${password}')`
+  const owner=await db.all(postquery)
+  res.json(owner)
+})
+
