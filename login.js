@@ -11,7 +11,7 @@ const JWT_SECRET = "mysecretkey";
 
 const app=express();
 
-const dbpath=path.join(__dirname,"login.db")
+const dbpath=path.join(__dirname,"log.db")
 let db=null;
 const initialise=async()=>{
     try{
@@ -38,12 +38,20 @@ app.use(cors({
 app.use(express.json())
 
 app.post('/userreg',async(req,res)=>{
+  
   const{username,password,email,contact_number}=req.body;
-  const selectQuery=`
-  INSERT INTO user_login (username,password,email,contact_number)
-  VALUES ('${username}','${password}','${email}','${contact_number}')`
-  const created=await db.run(selectQuery);
-  res.send(created)
+  const checkuser=`SELECT * FROM user_table WHERE username='${username}'`
+  const getuser=await db.get(checkuser)
+  if (getuser===undefined){
+      const selectQuery=`
+      INSERT INTO user_table (username,password,email,contact_number)
+      VALUES ('${username}','${password}','${email}','${contact_number}')`
+      const created=await db.run(selectQuery);
+      res.send(created)
+  }else{
+    alert("username is already exists")
+  }
+
   }
 )
 
@@ -51,7 +59,7 @@ app.post('/userreg',async(req,res)=>{
 app.delete("/userreg/:contact_number",async(req,res)=>{
  const {contact_number}=req.params;
 const Dquery=`
-DELETE FROM user_login WHERE contact_number="${contact_number}"`
+DELETE FROM user_table WHERE contact_number="${contact_number}"`
 await db.run(Dquery)
 res.send("deleted successfully")
 })
@@ -60,36 +68,49 @@ res.send("deleted successfully")
 app.use(cookieParser());
 app.post("/login",async(req,res)=>{
     const {username,password}=req.body;
+    try {
     const query=`
-    SELECT * FROM user_login WHERE username=?`
-    const user=await db.get(query,[username]);
+    SELECT * FROM user_table WHERE username='${username}'`
+    const user=await db.get(query);
+    console.log(user)
     if (!user || user.password !==password){  // if user is not their or user password also not same
        return res.send("invalid credentails")
     }
-    const token=jwt.sign({username:user.username},JWT_SECRET,{expiresIn:"30d"}); // create jwt token and addes expire time
+    const token=jwt.sign({user_id:user.id,username:user.username},JWT_SECRET,{expiresIn:"30d"}); // create jwt token and addes expire time
+    console.log(token)
    
-    // res.cookie("token",token, {
-    //   httpOnly: true,        //Prevents JavaScript from reading the cookie
-    //   sameSite: "Lax"        //	Prevents some CSRF attacks
-    // })
-    res.send({ message: "Login successful","token":token });
+    res.json({ message: "Login successful","token":token ,user});
+    console.log(message)
+    
+  }catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server error during login" });
+  }
 });
 
-
-app.get('/verify-token',(req,res)=>{
-     const token =req.cookies.token
-     if(!token){
-      return res.status(401).json({auth:false})
-     }
-     jwt.verify(token,JWT_SECRET,(err ,decoded)=>{
+function authentication(req,res,next){
+  const authheader=req.headers["authorization"]
+  const token =authheader && authheader.split(" ")[1];
+  if(!token){
+    res.status(401).json({auth:false,message:"missing token"})
+  }
+   jwt.verify(token,JWT_SECRET,(err ,decoded)=>{
       if(err){
-         return res.status(401).json({auth:false})
+         return res.status(401).json({auth:false,message:"invalid token"})
       }
-      return res.status(200).json({auth:true,username:decoded.username})
-     })
+    req.user=decoded;
+    req.user_id=decoded.user_id
+    next()
+  })
+    
+}
 
-
+app.get('/verify',authentication,(req,res)=>{
+      return res.status(200).json({auth:true,user:req.user})
 })
+
+
+
 
 app.post("/logout",(req,res)=>{
   res.clearCookie("token",{
@@ -99,3 +120,29 @@ app.post("/logout",(req,res)=>{
   });
   })
 
+
+app.post("/history",async(req,res)=>{
+  const {id,user_id,items,total_price,order_date}=req.body
+  const history=`
+  INSERT INTO user_history(id,user_id,items,total_price,order_date)
+  VALUES('${id}','${user_id}','${items}','${total_price}','${order_date}')`
+  const createdhistory=await db.run(history)
+  res.json(createdhistory)
+
+})
+
+app.get("/userhistory",authentication,async(req,res)=>{
+ 
+  const user_id=req.user_id
+  const gethistory=`SELECT * FROM user_history WHERE user_id='${user_id}' ORDER BY order_date DESC`
+  const userhistory=await db.all(gethistory)
+  res.json(userhistory)
+})
+
+app.delete("/userhistory/:user_id",async(req,res)=>{
+ const {user_id}=req.params;
+const Dquery=`
+DELETE FROM user_history WHERE user_id="${user_id}"`
+await db.run(Dquery)
+res.send("deleted successfully")
+})
