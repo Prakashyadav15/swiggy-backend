@@ -30,6 +30,48 @@ db.run(`
         if(err){
             console.log(err.message)
         }
-        db.close()
+        
     })
+
+
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS owner_table(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(200),
+        email VARCHAR(200),
+        password VARCHAR(200),
+        phonenumber INTEGER )`,(err)=>{
+            if(err){
+                console.log(err.message)
+            }
+            
+        })
+    db.run(`
+        CREATE TABLE IF NOT EXISTS restaurant(
+        res_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        res_name VRACHAR(200),
+        place VARCHAR(200),
+        owner_id INTEGER,
+         FOREIGN KEY (owner_id) REFERENCES owner_table(id)
+         )`,(err)=>{
+            if(err){
+                console.log(err.message)
+            }
+            
+        })
+    db.run(`
+
+         CREATE TABLE IF NOT EXISTS items_table (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        restaurant_id INTEGER,
+        name TEXT,
+        price REAL,
+        FOREIGN KEY (restaurant_id) REFERENCES restaurant(id)
+    )`,(err)=>{
+            if(err){
+                console.log(err.message)
+            }
+           db.close() 
+        })
  })
