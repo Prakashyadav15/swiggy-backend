@@ -1,5 +1,5 @@
 const sqlite3=require("sqlite3").verbose();
-const db=new sqlite3.Database("login.db")
+const db=new sqlite3.Database("log.db")
 
 db.run(`
     CREATE TABLE IF NOT EXISTS user_table (
@@ -38,6 +38,7 @@ db.run(`
     db.run(`
         CREATE TABLE IF NOT EXISTS owner_table(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(200),
         email VARCHAR(200),
         password VARCHAR(200))
         `,(err)=>{

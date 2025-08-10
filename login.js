@@ -11,7 +11,7 @@ const JWT_SECRET = "mysecretkey";
 
 const app=express();
 
-const dbpath=path.join(__dirname,"login.db")
+const dbpath=path.join(__dirname,"log.db")
 let db=null;
 const initialise=async()=>{
     try{
@@ -148,12 +148,49 @@ res.send("deleted successfully")
 })
 
 //====owner table==//
-app.post("owner",async(req,res)=>{
-  const {id,email,password}=req.body
+app.post("/owner",async(req,res)=>{
+  const {name,email,password}=req.body
   const postquery=`
-  INSERT INTO owner (id,email,password),
-  VALUES('${id}','${email}','${password}')`
-  const owner=await db.all(postquery)
+  INSERT INTO owner_table (name,email,password)
+  VALUES('${name}','${email}','${password}')`
+  const owner=await db.run(postquery)
   res.json(owner)
+})
+
+app.post("/ownerlog",async(req,res)=>{
+  const {email,password}=req.body
+try{
+  const ownerquery=`SELECT * FROM WHERE email='${email}'`
+  const owner=await db.get(ownerquery)
+  console.log(owner)
+  if(!owner && owner.password !== password){
+    return res.json("invalid credentail")
+  }
+  const token =jwt.sign({email:owner.email},JWT_SECRET,{expiresIn:30})
+  console.log(token)
+  res.send({message:"login succesful","token":token})
+  }catch(err){
+     res.json("something went wrong"+err.message)
+  }
+})
+
+function auth(req,res,next){
+  const authHead=req.headers['authorization']
+  const token=authHead && authHead.split(' ')[1]
+  if(!token){
+    res.json({auth:false,message:"missing token"})
+  }
+  jwt.verify(token,JWT_SECRET,(err,decoder)=>{
+    if(err){
+      res.json({auth:false,message:"invalid token"} )
+    }
+    req.owner=decoder
+    next()
+  })
+
+
+}
+app.get('/verify',auth,(req,res)=>{
+      return res.status(200).json({auth:true,owner:req.owner})
 })
 
