@@ -160,7 +160,7 @@ app.post("/owner",async(req,res)=>{
 app.post("/ownerlog",async(req,res)=>{
   const {email,password}=req.body
 try{
-  const ownerquery=`SELECT * FROM WHERE email='${email}'`
+  const ownerquery=`SELECT * FROM owner_table WHERE email='${email}'`
   const owner=await db.get(ownerquery)
   console.log(owner)
   if(!owner && owner.password !== password){
@@ -193,4 +193,9 @@ function auth(req,res,next){
 app.get('/verify',auth,(req,res)=>{
       return res.status(200).json({auth:true,owner:req.owner})
 })
-
+app.delete("/delete/:id",async(req,res)=>{
+  const {id}=req.params
+  const query=`DELETE FROM owner_table WHERE id='${id}'`
+  const deleted=await db.run(query)
+  res.send("deleted ")
+})
