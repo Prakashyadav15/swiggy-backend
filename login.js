@@ -163,10 +163,10 @@ try{
   const ownerquery=`SELECT * FROM owner_table WHERE email='${email}'`
   const owner=await db.get(ownerquery)
   console.log(owner)
-  if(!owner && owner.password !== password){
+  if(!owner || owner.password !== password){
     return res.json("invalid credentail")
   }
-  const token =jwt.sign({email:owner.email},JWT_SECRET,{expiresIn:30})
+  const token =jwt.sign({owner_id:owner.id,email:owner.email},JWT_SECRET,{expiresIn:30})
   console.log(token)
   res.send({message:"login succesful","token":token})
   }catch(err){
@@ -178,24 +178,56 @@ function auth(req,res,next){
   const authHead=req.headers['authorization']
   const token=authHead && authHead.split(' ')[1]
   if(!token){
-    res.json({auth:false,message:"missing token"})
+    return res.json({auth:false,message:"missing token"})
   }
-  jwt.verify(token,JWT_SECRET,(err,decoder)=>{
+  jwt.verify(token,JWT_SECRET,(err,decoded)=>{
     if(err){
-      res.json({auth:false,message:"invalid token"} )
+     return res.json({auth:false,message:"invalid token"} )
     }
-    req.owner=decoder
-    next()
+     console.log("token decoded:",decoded)
+      req.owner=decoded
+      req.owner_id=decoded.owner_id
+      next()
+       
   })
 
 
 }
-app.get('/verify',auth,(req,res)=>{
-      return res.status(200).json({auth:true,owner:req.owner})
-})
-app.delete("/delete/:id",async(req,res)=>{
-  const {id}=req.params
-  const query=`DELETE FROM owner_table WHERE id='${id}'`
+
+app.delete("/delete/:res_id",async(req,res)=>{
+  const {res_id}=req.params
+  const query=`DELETE FROM restaurant WHERE res_id='${res_id}'`
   const deleted=await db.run(query)
   res.send("deleted ")
+})
+
+app.post("/resname",auth,async(req,res)=>{
+try{  
+  const {resname,place,latitude,longitude}=req.body
+  const owner_id=req.owner_id
+  console.log(owner_id)
+  const postquery=`INSERT INTO restaurant (res_name,place,latitude,longitude,owner_id)
+  VALUES("${resname}","${place}","${latitude}","${longitude}","${owner_id}")`
+  const restaurant=await db.run(postquery)
+  res.json(restaurant)
+}catch(err){
+  console.error("Error in /resname route:", err);
+
+}
+})
+
+
+app.get("/check-res",auth,async(req,res)=>{
+  try{
+    const owner_id=req.owner_id
+    const query=`SELECT res_id FROM restaurant WHERE owner_id=?`
+    const checking=await db.get(query,[owner_id]);
+    if(checking){
+       res.json({hasrestaurant:true})
+    }else{
+      res.json({hasrestaurant:false})
+    }
+  }catch(err){
+     console.log("error in check-re",err)
+  }
 })

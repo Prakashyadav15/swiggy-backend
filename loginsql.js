@@ -52,6 +52,8 @@ db.run(`
         res_id INTEGER PRIMARY KEY AUTOINCREMENT,
         res_name VRACHAR(200),
         place VARCHAR(200),
+        latitude REAL,   -- Added for latitude
+        longitude REAL,
         owner_id INTEGER,
          FOREIGN KEY (owner_id) REFERENCES owner_table(id)
          )`,(err)=>{
@@ -60,6 +62,8 @@ db.run(`
             }
             
         })
+    db.run(`ALTER TABLE restaurant ADD COLUMN latitude REAL`);
+    db.run(`ALTER TABLE restaurant ADD COLUMN longitude REAL`);
     db.run(`
 
          CREATE TABLE IF NOT EXISTS items_table (
