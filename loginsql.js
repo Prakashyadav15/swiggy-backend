@@ -62,20 +62,23 @@ db.run(`
             }
             
         })
-    db.run(`ALTER TABLE restaurant ADD COLUMN latitude REAL`);
-    db.run(`ALTER TABLE restaurant ADD COLUMN longitude REAL`);
+    
     db.run(`
 
          CREATE TABLE IF NOT EXISTS items_table (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         restaurant_id INTEGER,
         name TEXT,
+        description text,
+        photo Text,
         price REAL,
         FOREIGN KEY (restaurant_id) REFERENCES restaurant(id)
     )`,(err)=>{
             if(err){
                 console.log(err.message)
             }
+            db.run(`ALTER TABLE items_table ADD COLUMN description text `);
            db.close() 
+
         })
  })

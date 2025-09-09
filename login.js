@@ -2,6 +2,8 @@ const express=require('express');
 const sqlite3=require('sqlite3')
 const {open}=require("sqlite");
 const path=require("path")
+const multer = require('multer');
+
 const cors = require('cors');   //for getting frontend req from port
 
 const jwt=require("jsonwebtoken");
@@ -10,7 +12,7 @@ const cookieParser=require("cookie-parser");  //for cookies to store jwt token
 const JWT_SECRET = "mysecretkey";   
 
 const app=express();
-
+app.use(express.static('public'));
 const dbpath=path.join(__dirname,"log.db")
 let db=null;
 const initialise=async()=>{
@@ -148,6 +150,11 @@ res.send("deleted successfully")
 })
 
 //====owner table==//
+
+// 
+// 
+// 
+// 
 app.post("/owner",async(req,res)=>{
   const {name,email,password}=req.body
   const postquery=`
@@ -231,3 +238,61 @@ app.get("/check-res",auth,async(req,res)=>{
      console.log("error in check-re",err)
   }
 })
+
+// === Multer Configuration for File Uploads ===
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Make sure a 'public/uploads/' directory exists
+        cb(null, 'public/uploads/');
+    },
+    filename: (req, file, cb) => {
+        // Create a unique filename to avoid overwriting files
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ storage: storage });
+
+
+// === API Endpoint to Add a New Item ===
+app.post('/items', auth, upload.single('photo'), async (req, res) => {
+    try {
+        const { name, price, description } = req.body;
+        const owner_id = req.owner_id; // Get owner_id from your 'auth' middleware
+
+        // 1. Find the restaurant_id for the logged-in owner
+        const restaurantQuery = `SELECT res_id FROM restaurant WHERE owner_id = ?`;
+        const restaurant = await db.get(restaurantQuery, [owner_id]);
+
+        if (!restaurant) {
+            return res.status(404).json({ error: "Restaurant not found for this owner." });
+        }
+        const restaurant_id = restaurant.res_id;
+
+        // 2. Check if a file was uploaded
+        if (!req.file) {
+            return res.status(400).json({ error: 'Photo is required.' });
+        }
+
+        // 3. Prepare and insert the new item
+        const photoUrl = `/uploads/${req.file.filename}`;
+        if (!name || !price) {
+            return res.status(400).json({ error: 'Name and price are required.' });
+        }
+
+        const sql = `INSERT INTO items_table (name, price, description, photo_url, restaurant_id) VALUES (?, ?, ?, ?, ?)`;
+        const params = [name, price, description, photoUrl, restaurant_id];
+
+        const result = await db.run(sql, params);
+
+        res.status(201).json({
+            "message": "success",
+            "data": { id: result.lastID, name, price, description, photoUrl }
+        });
+
+    } catch (err) {
+        console.error("Error adding item:", err);
+        res.status(500).json({ "error": err.message });
+    }
+});
