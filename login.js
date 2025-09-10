@@ -173,7 +173,7 @@ try{
   if(!owner || owner.password !== password){
     return res.json("invalid credentail")
   }
-  const token =jwt.sign({owner_id:owner.id,email:owner.email},JWT_SECRET,{expiresIn:30})
+  const token =jwt.sign({owner_id:owner.id,email:owner.email},JWT_SECRET,{expiresIn:"30d"})
   console.log(token)
   res.send({message:"login succesful","token":token})
   }catch(err){
@@ -240,27 +240,25 @@ app.get("/check-res",auth,async(req,res)=>{
 })
 
 // === Multer Configuration for File Uploads ===
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Make sure a 'public/uploads/' directory exists
-        cb(null, 'public/uploads/');
+        const uploadPath = path.join(__dirname, 'public', 'uploads');
+        cb(null, uploadPath); 
     },
     filename: (req, file, cb) => {
-        // Create a unique filename to avoid overwriting files
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-
 const upload = multer({ storage: storage });
-
 
 // === API Endpoint to Add a New Item ===
 app.post('/items', auth, upload.single('photo'), async (req, res) => {
     try {
         const { name, price, description } = req.body;
         const owner_id = req.owner_id; // Get owner_id from your 'auth' middleware
-
+        console.log(owner_id)
         // 1. Find the restaurant_id for the logged-in owner
         const restaurantQuery = `SELECT res_id FROM restaurant WHERE owner_id = ?`;
         const restaurant = await db.get(restaurantQuery, [owner_id]);
@@ -281,7 +279,7 @@ app.post('/items', auth, upload.single('photo'), async (req, res) => {
             return res.status(400).json({ error: 'Name and price are required.' });
         }
 
-        const sql = `INSERT INTO items_table (name, price, description, photo_url, restaurant_id) VALUES (?, ?, ?, ?, ?)`;
+        const sql = `INSERT INTO items_table (name, price, description, photo, restaurant_id) VALUES (?, ?, ?, ?, ?)`;
         const params = [name, price, description, photoUrl, restaurant_id];
 
         const result = await db.run(sql, params);
@@ -292,7 +290,6 @@ app.post('/items', auth, upload.single('photo'), async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error adding item:", err);
-        res.status(500).json({ "error": err.message });
+     res.status(500).json({ "error": err.message });
     }
 });

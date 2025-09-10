@@ -72,12 +72,12 @@ db.run(`
         description text,
         photo Text,
         price REAL,
-        FOREIGN KEY (restaurant_id) REFERENCES restaurant(id)
+        FOREIGN KEY (restaurant_id) REFERENCES restaurant(res_id)
     )`,(err)=>{
             if(err){
                 console.log(err.message)
             }
-            db.run(`ALTER TABLE items_table ADD COLUMN description text `);
+           
            db.close() 
 
         })
