@@ -8,11 +8,13 @@ const cors = require('cors');   //for getting frontend req from port
 
 const jwt=require("jsonwebtoken");
 const cookieParser=require("cookie-parser");  //for cookies to store jwt token
-
+const http = require('http');
+const { Server } = require("socket.io");
 const JWT_SECRET = "mysecretkey";   
 
 const app=express();
 app.use(express.static('public'));
+const server = http.createServer(app);
 const dbpath=path.join(__dirname,"log.db")
 let db=null;
 const initialise=async()=>{
@@ -22,7 +24,7 @@ const initialise=async()=>{
             filename:dbpath,
             driver:sqlite3.Database
         })
-         app.listen(3000,()=>{
+         server.listen(3000,()=>{
             console.log("server is running http://localhost:3000")
          })
     }
@@ -33,10 +35,24 @@ const initialise=async()=>{
 }
 initialise()
 
-app.use(cors({
-  origin: 'http://localhost:3001',
-  credentials: true
-}));
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3001",
+    credentials:true 
+    }
+});
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  socket.on('join_restaurant_room', (restaurantId) => {
+      socket.join(restaurantId);
+      console.log(`Socket ${socket.id} joined room for restaurant ${restaurantId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
 app.use(express.json())
 
 app.post('/userreg',async(req,res)=>{
@@ -244,7 +260,7 @@ app.get("/check-res",auth,async(req,res)=>{
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadPath = path.join(__dirname, 'public', 'uploads');
-        cb(null, uploadPath); 
+          cb(null, uploadPath); 
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -291,5 +307,86 @@ app.post('/items', auth, upload.single('photo'), async (req, res) => {
 
     } catch (err) {
      res.status(500).json({ "error": err.message });
+    }
+});
+
+
+app.get('/getItems',auth,async(req,res)=>{
+    try{
+    const ownerId=req.owner_id
+    const getres=`SELECT res_id FROM restaurant WHERE owner_id='${ownerId}'`
+    const getresId=await db.get(getres)
+   
+    if(getresId){
+      const getitem=`SELECT * FROM items_table WHERE restaurant_id='${getresId.res_id}'`
+      const getingItem=await db.get(getitem)
+      res.json(getingItem)
+    }
+
+  }catch(err){
+     console.log("something went wrong")
+  }
+})
+
+// In your backend file, add this new endpoint
+
+// Endpoint for a user to place an order
+app.post('/place-order', authentication, async (req, res) => {
+    const { restaurant_id, items, total_price } = req.body;
+    const user_id = req.user_id;
+
+    const sql = `
+        INSERT INTO live_orders (user_id, restaurant_id, items, total_price, status)
+        VALUES (?, ?, ?, ?, 'Placed')
+    `;
+    
+    try {
+        const result = await db.run(sql, [user_id, restaurant_id, JSON.stringify(items), total_price]);
+        const newOrder = {
+            order_id: result.lastID,
+            user_id,
+            restaurant_id,
+            items,
+            total_price,
+            status: 'Placed'
+        };
+
+        // --- REAL-TIME MAGIC ---
+        // Emit an event to the specific restaurant's "room"
+        io.to(restaurant_id).emit('new_order', newOrder);
+        console.log(`Emitted new_order to restaurant room: ${restaurant_id}`);
+
+        res.status(201).json(newOrder);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// Endpoint for a restaurant to update an order status
+app.put('/update-order-status/:order_id', auth, async (req, res) => {
+    const { order_id } = req.params;
+    const { status } = req.body; // e.g., 'Accepted', 'Preparing', 'Ready'
+
+    const sql = `UPDATE live_orders SET status = ? WHERE order_id = ?`;
+
+    try {
+        await db.run(sql, [status, order_id]);
+
+        // Get the updated order details to send to the user
+        const updatedOrder = await db.get('SELECT * FROM live_orders WHERE order_id = ?', [order_id]);
+
+        // --- REAL-TIME MAGIC ---
+        // We need a way to notify the specific user.
+        // For a full app, you would map user_id to socket.id
+        // For now, we can broadcast, but targeting the user is better.
+        io.emit('order_update', updatedOrder); 
+        console.log(`Emitted order_update for order: ${order_id}`);
+        
+        res.json(updatedOrder);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });

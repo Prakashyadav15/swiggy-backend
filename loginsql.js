@@ -77,8 +77,23 @@ db.run(`
             if(err){
                 console.log(err.message)
             }
-           
-           db.close() 
 
         })
+        db.run(`
+            CREATE TABLE IF NOT EXISTS live_orders (
+                order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                restaurant_id INTEGER,
+                items TEXT, -- Storing items as a JSON string is common
+                total_price REAL,
+                status TEXT NOT NULL CHECK(status IN ('Placed', 'Accepted', 'Preparing', 'Ready')),
+                order_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES user_table(id),
+                FOREIGN KEY(restaurant_id) REFERENCES restaurant(res_id)
+            )`,(err)=>{
+            if(err){
+                console.log(err.message)
+            }
+            db.close() 
+    })
  })
