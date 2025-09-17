@@ -55,6 +55,7 @@ db.run(`
         latitude REAL,   -- Added for latitude
         longitude REAL,
         owner_id INTEGER,
+        res_slug TEXT UNIQUE,  -- Add the new column directly here
          FOREIGN KEY (owner_id) REFERENCES owner_table(id)
          )`,(err)=>{
             if(err){
@@ -86,7 +87,7 @@ db.run(`
                 restaurant_id INTEGER,
                 items TEXT, -- Storing items as a JSON string is common
                 total_price REAL,
-                status TEXT NOT NULL CHECK(status IN ('Placed', 'Accepted', 'Preparing', 'Ready')),
+                status TEXT NOT NULL CHECK(status IN ('Placed', 'Accepted', 'Preparing', 'Ready','completed')),
                 order_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES user_table(id),
                 FOREIGN KEY(restaurant_id) REFERENCES restaurant(res_id)
@@ -94,6 +95,8 @@ db.run(`
             if(err){
                 console.log(err.message)
             }
-            db.close() 
+            
     })
+    db.close()
+    
  })

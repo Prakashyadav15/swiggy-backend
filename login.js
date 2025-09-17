@@ -10,7 +10,8 @@ const jwt=require("jsonwebtoken");
 const cookieParser=require("cookie-parser");  //for cookies to store jwt token
 const http = require('http');
 const { Server } = require("socket.io");
-const JWT_SECRET = "mysecretkey";   
+const JWT_SECRET = "mysecretkey"; 
+const NEW_SECRET="forrestaurent" 
 
 const app=express();
 app.use(express.static('public'));
@@ -34,25 +35,33 @@ const initialise=async()=>{
     }
 }
 initialise()
-
 const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:3001",
-    credentials:true 
+    cors: {
+        origin: ["http://localhost:3001", "http://localhost:3002"],
+        credentials: true
     }
 });
+// In login.js
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+    console.log('A client connected:', socket.id);
 
-  socket.on('join_restaurant_room', (restaurantId) => {
-      socket.join(restaurantId);
-      console.log(`Socket ${socket.id} joined room for restaurant ${restaurantId}`);
-  });
+    // This is the listener for a restaurant joining its private room.
+    socket.on('join_restaurant_room', (restaurantId) => {
+        // The toString() is a good safety measure
+        socket.join(restaurantId.toString());
+        console.log(`Socket ${socket.id} joined room for restaurant ${restaurantId}`);
+    });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
+    socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
+    });
 });
+  app.use(cors({
+  origin: ['http://localhost:3001','http://localhost:3002' ],
+  credentials: true
+}));
+
+
 app.use(express.json())
 
 app.post('/userreg',async(req,res)=>{
@@ -185,11 +194,11 @@ app.post("/ownerlog",async(req,res)=>{
 try{
   const ownerquery=`SELECT * FROM owner_table WHERE email='${email}'`
   const owner=await db.get(ownerquery)
-  console.log(owner)
+  
   if(!owner || owner.password !== password){
     return res.json("invalid credentail")
   }
-  const token =jwt.sign({owner_id:owner.id,email:owner.email},JWT_SECRET,{expiresIn:"30d"})
+  const token =jwt.sign({owner_id:owner.id,email:owner.email},NEW_SECRET,{expiresIn:"30d"})
   console.log(token)
   res.send({message:"login succesful","token":token})
   }catch(err){
@@ -203,13 +212,16 @@ function auth(req,res,next){
   if(!token){
     return res.json({auth:false,message:"missing token"})
   }
-  jwt.verify(token,JWT_SECRET,(err,decoded)=>{
+  jwt.verify(token,NEW_SECRET,(err,decoder)=>{
     if(err){
      return res.json({auth:false,message:"invalid token"} )
     }
-     console.log("token decoded:",decoded)
-      req.owner=decoded
-      req.owner_id=decoded.owner_id
+     if (decoder.owner_id === undefined) {
+            return res.status(403).json({ auth: false, message: "Forbidden: Not an owner token." });
+        }
+      
+      req.owner=decoder
+      req.owner_id=decoder.owner_id
       next()
        
   })
@@ -217,20 +229,32 @@ function auth(req,res,next){
 
 }
 
-app.delete("/delete/:res_id",async(req,res)=>{
-  const {res_id}=req.params
-  const query=`DELETE FROM restaurant WHERE res_id='${res_id}'`
+app.delete("/delete/:id",async(req,res)=>{
+  const {id}=req.params
+  const query=`DELETE FROM owner_table WHERE id='${id}'`
   const deleted=await db.run(query)
   res.send("deleted ")
 })
+
+function slugify(text) {
+    return text
+        .toString()
+        .toLowerCase()
+        .replace(/\s+/g, '-')           // Replace spaces with -
+        .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+        .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+        .replace(/^-+/, '')             // Trim - from start of text
+        .replace(/-+$/, '');            // Trim - from end of text
+}
 
 app.post("/resname",auth,async(req,res)=>{
 try{  
   const {resname,place,latitude,longitude}=req.body
   const owner_id=req.owner_id
   console.log(owner_id)
-  const postquery=`INSERT INTO restaurant (res_name,place,latitude,longitude,owner_id)
-  VALUES("${resname}","${place}","${latitude}","${longitude}","${owner_id}")`
+  const res_slug = slugify(resname);
+  const postquery=`INSERT INTO restaurant (res_name,place,latitude,longitude,owner_id,res_slug)
+  VALUES("${resname}","${place}","${latitude}","${longitude}","${owner_id}",'${res_slug}')`
   const restaurant=await db.run(postquery)
   res.json(restaurant)
 }catch(err){
@@ -245,13 +269,14 @@ app.get("/check-res",auth,async(req,res)=>{
     const owner_id=req.owner_id
     const query=`SELECT res_id FROM restaurant WHERE owner_id=?`
     const checking=await db.get(query,[owner_id]);
+    
     if(checking){
-       res.json({hasrestaurant:true})
+       res.json({hasrestaurant:true,restaurantId: checking.res_id})
     }else{
       res.json({hasrestaurant:false})
     }
   }catch(err){
-     console.log("error in check-re",err)
+     console.log("error in check-res",err)
   }
 })
 
@@ -311,26 +336,67 @@ app.post('/items', auth, upload.single('photo'), async (req, res) => {
 });
 
 
-app.get('/getItems',auth,async(req,res)=>{
-    try{
-    const ownerId=req.owner_id
-    const getres=`SELECT res_id FROM restaurant WHERE owner_id='${ownerId}'`
-    const getresId=await db.get(getres)
-   
-    if(getresId){
-      const getitem=`SELECT * FROM items_table WHERE restaurant_id='${getresId.res_id}'`
-      const getingItem=await db.get(getitem)
-      res.json(getingItem)
+app.get('/getItems', auth, async (req, res) => {
+    try {
+        const ownerId = req.owner_id;
+        const restaurantQuery = `SELECT res_id FROM restaurant WHERE owner_id = ?`;
+        const restaurant = await db.get(restaurantQuery, [ownerId]);
+
+        if (restaurant) {
+            const itemsQuery = `SELECT * FROM items_table WHERE restaurant_id = ?`;
+            const allItems = await db.all(itemsQuery, [restaurant.res_id]);
+            res.json(allItems);
+        } else {
+            res.json([]);
+        }
+
+    } catch (err) {
+        console.error("Error in /getItems:", err.message);
+        res.status(500).json({ error: "An error occurred while fetching items." });
     }
+});
 
-  }catch(err){
-     console.log("something went wrong")
-  }
-})
+// ENDPOINT FOR A USER TO GET ALL RESTAURANTS
+app.get('/restaurants', authentication, async (req, res) => {
+    try {
+        // A simple query to get the most important info for the list view
+        const sql = `SELECT res_id, res_name, place, res_slug FROM restaurant`;
+        
+        // db.all() is used because we expect multiple rows
+        const restaurants = await db.all(sql);
 
-// In your backend file, add this new endpoint
+        res.json(restaurants);
 
-// Endpoint for a user to place an order
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch restaurants: " + err.message });
+    }
+});
+
+app.get('/restaurants/:slug', authentication, async (req, res) => {
+    const { slug } = req.params; // Get the ID from the URL
+
+    try {
+        const restaurantSql = `SELECT * FROM restaurant WHERE res_slug = ?`;
+        const restaurantDetails = await db.get(restaurantSql, [slug]);
+
+        if (!restaurantDetails) {
+            return res.status(404).json({ error: "Restaurant not found" });
+        }
+
+        const itemsSql = `SELECT * FROM items_table WHERE restaurant_id = ?`;
+        const menuItems = await db.all(itemsSql, [restaurantDetails.res_id]);
+
+        res.json({
+            details: restaurantDetails,
+            menu: menuItems
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch restaurant details: " + err.message });
+    }
+});
+
+
 app.post('/place-order', authentication, async (req, res) => {
     const { restaurant_id, items, total_price } = req.body;
     const user_id = req.user_id;
@@ -364,28 +430,182 @@ app.post('/place-order', authentication, async (req, res) => {
 });
 
 
-// Endpoint for a restaurant to update an order status
+
+
 app.put('/update-order-status/:order_id', auth, async (req, res) => {
     const { order_id } = req.params;
-    const { status } = req.body; // e.g., 'Accepted', 'Preparing', 'Ready'
+    const { status } = req.body;
 
     const sql = `UPDATE live_orders SET status = ? WHERE order_id = ?`;
 
     try {
+        // This part stays the same
         await db.run(sql, [status, order_id]);
-
-        // Get the updated order details to send to the user
         const updatedOrder = await db.get('SELECT * FROM live_orders WHERE order_id = ?', [order_id]);
 
-        // --- REAL-TIME MAGIC ---
-        // We need a way to notify the specific user.
-        // For a full app, you would map user_id to socket.id
-        // For now, we can broadcast, but targeting the user is better.
+        // --- THIS IS THE NEW LOGIC ---
+        // If the order is now marked as 'completed'
+        if (status === 'completed' && updatedOrder) {
+            
+            // Prepare the data for the user_history table
+            const historySql = `
+                INSERT INTO user_history (user_id, items, total_price, order_date)
+                VALUES (?, ?, ?, ?)
+            `;
+            
+            // Insert the completed order into the history table
+            await db.run(historySql, [
+                updatedOrder.user_id, 
+                updatedOrder.items, 
+                updatedOrder.total_price,
+                updatedOrder.order_time // Use the original order time
+            ]);
+            
+            console.log(`Order #${order_id} moved to history.`);
+        }
+        // --- END OF NEW LOGIC ---
+
+        // The real-time update to the user still works perfectly
         io.emit('order_update', updatedOrder); 
         console.log(`Emitted order_update for order: ${order_id}`);
         
         res.json(updatedOrder);
 
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// Add this to your main server file (e.g., login.js)
+
+app.get('/live-orders', auth, async (req, res) => {
+    try {
+        const owner_id = req.owner_id;
+
+        const restaurantQuery = `SELECT res_id FROM restaurant WHERE owner_id = ?`;
+        const restaurant = await db.get(restaurantQuery, [owner_id]);
+
+        if (!restaurant) {
+            return res.status(404).json({ error: "Restaurant not found for this owner." });
+        }
+        const restaurant_id = restaurant.res_id;
+
+        // 2. Then, get all orders for that restaurant that are not yet completed
+        const ordersQuery = `
+             SELECT 
+                lo.*, 
+                ut.username 
+            FROM 
+                live_orders AS lo
+            JOIN 
+                user_table AS ut ON lo.user_id = ut.id
+            WHERE 
+                lo.restaurant_id = ? AND lo.status != 'completed'
+            ORDER BY 
+                lo.order_id DESC
+        `;
+        const orders = await db.all(ordersQuery, [restaurant_id]);
+        
+        // 3. Send the orders back to the frontend
+        res.json(orders);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/completed-orders', auth, async (req, res) => {
+    try {
+        const owner_id = req.owner_id;
+
+        const restaurantQuery = `SELECT res_id FROM restaurant WHERE owner_id = ?`;
+        const restaurant = await db.get(restaurantQuery, [owner_id]);
+
+        if (!restaurant) {
+            return res.status(404).json({ error: "Restaurant not found for this owner." });
+        }
+        const restaurant_id = restaurant.res_id;
+
+        // 2. Then, get all orders for that restaurant that are not yet completed
+        const ordersQuery = `
+             SELECT 
+                lo.*, 
+                ut.username 
+            FROM 
+                live_orders AS lo
+            JOIN 
+                user_table AS ut ON lo.user_id = ut.id
+            WHERE 
+                lo.restaurant_id = ? AND lo.status == 'completed'
+            ORDER BY 
+                lo.order_id DESC
+        `;
+        const orders = await db.all(ordersQuery, [restaurant_id]);
+        
+        // 3. Send the orders back to the frontend
+        res.json(orders);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/profile',auth,async(req,res)=>{
+    const ownerId = req.owner_id;
+    
+    const pro=`SELECT * FROM owner_table WHERE id="${ownerId}"`
+    const profile=await db.all(pro)
+    res.json(profile)
+
+  
+   
+})
+app.get("/res-details",auth,async(req,res)=>{
+    const ownerId = req.owner_id;
+    const gettingres=`SELECT * FROM restaurant WHERE owner_id="${ownerId}"`
+    const rest=await db.all(gettingres)
+    res.json(rest)
+})
+
+//for updated status of order for user
+
+app.get('/my-active-orders', authentication, async (req, res) => {
+    try {
+        // The 'authentication' middleware gives us the logged-in user's ID
+        const user_id = req.user_id;
+
+        const sql = `
+            SELECT * FROM live_orders 
+            WHERE user_id = ? AND status != 'Completed' 
+            ORDER BY order_time DESC
+        `;
+
+        const activeOrders = await db.all(sql, [user_id]);
+
+        res.json(activeOrders);
+
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch active orders: " + err.message });
+    }
+});
+
+
+// In your backend server file (e.g., login.js)
+
+app.get('/order/:id', authentication, async (req, res) => {
+    try {
+        const order_id = req.params.id;
+        const user_id = req.user_id;
+
+        // Security check: Make sure the logged-in user is the one who owns this order
+        const sql = `SELECT * FROM live_orders WHERE order_id = ? AND user_id = ?`;
+        const order = await db.get(sql, [order_id, user_id]);
+
+        if (order) {
+            res.json(order);
+            console.log(order)
+        } else {
+            res.status(404).json({ error: "Order not found or you do not have permission to view it." });
+        }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
